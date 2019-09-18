@@ -1,0 +1,92 @@
+\documentclass[12pt, titlepage]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[ngerman]{babel}
+\usepackage{graphicx}
+\usepackage[a4paper,width=150mm,top=25mm,bottom=25mm,bindingoffset=6mm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[table,xcdraw]{xcolor}
+\usepackage[nopostdot,toc,acronym,nomain,nonumberlist]{glossaries}
+\usepackage[rightcaption]{sidecap}
+\usepackage[export]{adjustbox}
+\usepackage{eurosym}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage{fancyhdr}
+\usepackage{float}
+\pagestyle{fancy}
+\fancyhead{}
+\fancyfoot{}
+\fancyfoot[R]{\thepage}
+\setlength{\headheight}{14.5pt}
+\usepackage{csquotes}
+\usepackage{biblatex}
+\usepackage{csvsimple}
+\usepackage{subcaption}
+\usepackage{hyperref}
+
+\addbibresource{Bibliographie.bib}
+
+\title{\textbf{Bericht zum Seminar:\\[1cm]Praktische Analyse räumlicher Daten \\in R (Sommersemester 2019)}}
+
+\author{\textbf{Betreuer} : Christopher Küster\\[1em] \textbf{Teilnehmer} : Benedikt Arnthof \\ [1em] \textbf{Thema} : Ecology}
+\date{\textbf{Datum} : \today}
+
+
+\begin{document}
+\begin{figure}
+   \centering
+  \includegraphics[width = 0.4\linewidth]{Figures/Sigillum_new.png}
+\end{figure}
+
+\maketitle
+\nopagebreak
+\begin{abstract}
+\label{section: Abstract}
+    \input{Abstract.tex}
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Motivation}
+\label{section:Motivation}
+    \input{Motivation.tex}
+\newpage
+
+\section{Daten: Zugang und Aufbereitung}
+\label{section:Datenaufbereitung}
+    \input{Datenaufbereitung.tex}
+\newpage
+
+\section{Verwendete Klassifikatoren}
+\label{section:Theorie}
+\input{Theorie.tex}
+\newpage
+
+\section{Ergebnisse}
+
+\label{section:Ergebnisse}
+\input{Ergebnisse.tex}
+\newpage
+
+\section{Interpretation und Probleme}
+\label{section:5}
+\input{inter.tex}
+\newpage
+
+\section{Ausblick}
+\label{section:Ausblick}
+\input{Ausblick.tex}
+\newpage
+
+\sloppy
+\printbibliography
+
+\newpage
+\listoffigures
+\newpage
+\listoftables
+
+\end{document}
