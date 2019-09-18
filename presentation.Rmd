@@ -1,0 +1,419 @@
+---
+title: "Ecology"
+subtitle: "Seminar Geocomputation SoSe 2019"
+author: "Benedikt Arnthof"
+date: "17.07.2019"
+output: beamer_presentation
+css: slides.css
+includes:
+      in_header: header_pagenrs.tex
+---
+  
+  ```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = FALSE)
+source("presentationimports.R")
+```
+
+## Gliederung
+* Ökologie -- Ein Überblick
+* Motivation
+* Daten -- Zugang und Aufbereitung
+* Modelle -- Wahl & Performance
+* Resultate -- Predictive- & Cell-Difference-Maps
+* Interpretation & Probleme
+* Ausblick 
+* Packages & Literatur
+* Diskussion
+
+## Ökologie -- Ein Überblick
+#### Analyse von Beziehungen zwischen Lebewesen und ihrer Umwelt
+* Untersuchungen von Arten, Populationen und Lebensgemeinschaften
+
+In Kombination mit geographischen Daten:  
+
+* Aufdecken von Mustern in Lebensräumen 
+* Prognose der Präsenzen von Lebewesen in Forschungsgebieten
+
+
+## Motivation 
+* Modellierung der Habitateignung für Menschen aus der Eisenzeit
+* Predictive Mapping
+```{r floristic, echo=FALSE, fig.cap="Beispiel für Predictive Maps aus Kapitel 14", out.width = '50%'}
+knitr::include_graphics("images/floristicgradient.png")
+```
+
+## Daten -- Zugang und Aufbereitung
+```{r rawdata, echo = T, eval=T}
+head2d(raw_data, n = c(5L, 5L))
+```
+* Datensatz von Fender 2017
+* Zugang Online: https://www.dh-lehre.gwi.uni-muenchen.de/
+* Höhe, Neigung, Distanzen zu Gewässern, Niederschlag, Sonnenstunden, etc. 
+
+## Daten -- Probleme mit Rohdaten
+* Für Modellierung werden Präsenz- & Nonpräsenzdaten benötigt
+* Originaldaten nicht Rasterbasiert
+* Für Prognosekarten werden Rasterdaten gebraucht
+
+\(\rightarrow\) Verwenden von Koordinaten & Online verfügbaren Rasterdaten
+
+\(\rightarrow\) Ableiten von Variablen wie Hangneigung aus einem DEM
+
+\(\rightarrow\) Verwende Vektordaten um die Entfernung zu Gewässern zu berechnen
+
+## Daten -- Verwendete Onlinedaten 
+```{r, dem, echo = F, fig.cap = "Digital Elevation Model: Bayern", out.width='100%'}
+elev <- predictors$dem
+elev$Elevation <- elev$dem
+tm_shape(elev$Elevation) + 
+  tm_raster(alpha = 1, style = "cont", palette = colorRamps::matlab.like(100)) + 
+  tm_layout(bg.color = "white", frame = FALSE, legend.position = c("left", "bottom"), scale = 1)
+```
+## Daten -- Hangneigung und TPI
+Neigung und Topographic Position Index werden aus DEM errechnet:
+```{r slope, echo = T, eval = F}
+dem <- predictors$dem
+# Errechne Terraindaten aus DEM
+env_data <- raster::terrain(dem, opt = c("slope", "aspect", "tpi"),
+                    unit = "degrees")
+# Konvertiere 'aspect' in 8 verschiedene Klassen
+env_data$aspect <- ceiling((env_data$aspect + 360/8/2)/(360/8))
+env_data$aspect[env_data$aspect > 8] <- 1
+```
+
+## Daten -- Visualisierung Hangneigung
+```{r, slopevis, echo = F, fig.cap = "Hangneigung aus DEM"}
+dist <- predictors$slope
+dist$Neigung <- dist$slope
+tm_shape(dist$Neigung) + 
+  tm_raster(alpha = 1, style = "cont", palette = colorRamps::matlab.like(100)) + 
+  tm_layout(bg.color = "white", frame = FALSE, legend.position = c("left", "bottom"), scale = 1)
+```
+
+
+## Daten -- Predictorstack
+### Insgesamt wurden als Kovariablen verwendet:
+* Digital Elevation Model
+* Durchschnittstemperatur
+* Durchschnittsniederschlag
+* Distanz zum nächstgelegenen Gewässer
+* Durchschnittliche Frosttage pro Jahr
+* Durchschnittliche Sonnenstunden pro Tag
+* Topographic Position Index (TPI)
+* Hangneigung
+* Hangrotation (Als 8-stufiger Factor)
+
+## Daten -- Distanzen zu Gewässern
+### Erster Ansatz:  
+* Stream network extraction aus DEM via GRASS GIS
+* r.stream.extract errechnet Flussnetz aus DEM
+* r.stream.distance errechnet Distanzen zu Flussnetz
+
+### Problem:
+* Resultat nicht ausreichend, DEM mit höherer Auflösung wäre nötig. 
+
+## Daten -- Distanzen zu Gewässern
+```{r dem_rivers, echo=FALSE, fig.cap="Stream Network Extraction", out.width = '50%', out.height='50%'}
+knitr::include_graphics("images/dem_rivers.png", dpi = 100)
+```
+
+## Daten -- Distanzen zu Gewässern
+### Zweiter Ansatz:  
+* Berechne Distanzen zu Shapefile punktweise
+```{r, pardist2water, echo = T}
+
+wdist <- function(pnts, shapef = shapewater, splits = 10, workers = 4) {
+  # split into equal parts
+  pointsliste <- splitframe(pnts, splits)
+  registerDoParallel(cores = workers)
+  tmp <- foreach(i = 1:splits) %dopar% {
+    geosphere::dist2Line(p = pointsliste[[i]], line = shapef)
+  }
+  tmp <- do.call(rbind, tmp)
+  tmp <- cbind(pnts, tmp)
+  return(tmp)
+}
+```
+
+## Daten -- Distanzen zu Gewässern
+### Problem:  
+* Zu langsam -- Etwa eine Sekunde Rechenzeit pro Punkt
+```{r, plotwater, echo = T}
+plot2water(df = riverdists, rows = 10)
+```
+
+## Daten -- Distanzen zu Gewässern
+#### Letzter Ansatz:  
+* Ermittle Distanzen für gesamtes Raster  
+* Extrahiere Werte für Punkte aus Raster  
+```{r, riverdist, echo = F, fig.cap = "Distanzen zu Gewässern"}
+dist <- predictors$distance_water
+dist$Dist.Water <- dist$distance_water
+tm_shape(dist$Dist.Water) + 
+  tm_raster(alpha = 1, style = "cont", palette = colorRamps::matlab.like(100)) + 
+  tm_layout(bg.color = "white", frame = FALSE, legend.position = c("left", "bottom"), scale = 1)
+```
+## Daten -- Vergleich zu Flussläufen
+<font size="3">Quelle: https://www.bestellen.bayern.de/ (Gewässerkarte Bayern)</font>
+```{r watermap, echo=FALSE, fig.cap="Vergleich zu Flussläufen Bayerns", out.width = '50%'}
+knitr::include_graphics("images/watermap.png")
+```
+
+
+## Daten -- Pseudo-Nonpresence-Sampling
+#### Problem: Nur Präsenzdaten sind im Datensatz enthalten
+#### Lösung: Sampling von "nonpräsenz" Punkten aus dem Raster
+#### Nebenbedingung: Mindestabstand zu den Fundstellen muss eingehalten werden
+
+  
+```{r buffsamp, echo = T, eval = F}
+buffer <- sf::st_buffer(sites, dist = 1500)
+buff_polygons <- sf::as_Spatial(buffer$geometry)
+samp <- raster::sampleRandom-N(predictors[[1]], 10000, sp = T)
+samp_utm <- spTransform(samp, CRS("+proj=utm +zone=32 ellps=WGS84"))
+crs(buff_polygons) <- crs(samp_utm)
+buffsample <- samp_utm[is.na(sp::over(samp_utm, buff_polygons)),]
+# Visualization with Shiny
+```
+
+## Modelle -- Wahl 
+### Logistisches Modell als Basis
+```{r logitmodel, echo = T, eval = T}
+evidence <- readRDS("Daten/evidence.csv")
+basefit <- glm(site ~ dem + temp + rain + distance_water + 
+                 frostdays + sunhours + tpi + slope + 
+                 as.factor(aspect), 
+                 family = binomial(), 
+                 data = evidence)
+```
+* Hangrotation als Faktor in die Modelle aufgenommen
+* Nur TPI und einige der Hangrotationsstufen nicht signifikant
+
+## Modelle -- Output Logit Modell: 
+```{r logitoutput, echo = T, eval = T}
+logmodel <- summary(basefit)
+rnd <- round(logmodel$coefficients, digits = 5L)
+head2d(rnd, n = c(11L, 4L))
+```
+
+
+
+```{r pdatalogit, eval = T, echo = F}
+df <- as.data.frame(predictors)
+df[c("x","y")] <- coordinates(predictors)
+df <- df[complete.cases(df),]
+pdata <- predict(basefit, newdata = df, type = "response")
+```
+## Modelle -- Wahl 
+### Support Vector Machine als Alternative
+```{r svmviz, eval = T,echo=F, out.width = '65%'}
+set.seed(123)
+x <- rbind(matrix(rnorm(120), , 2),matrix(rnorm(120,mean = 3), , 2))
+y <- matrix(c(rep(1,60),rep(-1,60)))
+
+svp <- kernlab::ksvm(x,y,type = "C-svc")
+plot(svp,data = x)
+
+```
+
+Ziel: Finde Hyperebene die Predictorspace bestmöglich in zwei Klassen teilt  
+Voraussetzung: Sinnvolle Hyperparameter C & sigma
+
+## Modelle -- Wahl 
+### Random Forest Classifier als weitere Alternative
+```{r rfviz, eval = T, echo = F, out.width='65%'}
+evd = dplyr::select(evidence, -lon, -lat)
+tree1 = tree::tree(site ~ distance_water + dem, data = evd)
+plot(tree1)
+text(tree1, pretty = 1)
+```
+
+Fitte große Anzahl von dekorrelierten decision Trees um Robustheit von Prognosen zu 
+gewährleisten.  
+Voraussetzung: Sinnvolle Hyperparameter 'mtry', 'sample.fraction' und 'min.node.size'
+
+## Modelle -- Performance
+### AUROC als Maß für predictive Performance
+```{r opts, eval = T, echo = F}
+knitr::opts_chunk$set(fig.width = 5, fig.height = 5)
+```
+
+```{r roc, eval = T, echo = F}
+prob <- predict(basefit, type = c("response"))    
+pred <- prediction(prob, evidence$site)    
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")     
+plot(perf,col = rainbow(7), main = "ROC curve Logit-Model", xlab = "Specificity", 
+     ylab = "Sensitivity")
+abline(a = 0, b = 1)
+```
+
+
+## Modelle -- Performance
+#### Performancescoring & Hyperparametertuning benötigten geeignetes Resamplingverfahren
+
+```{r resamp, echo=FALSE, fig.cap="Classic CV vs Spatial CV",out.width = "750px"}
+knitr::include_graphics("images/cv_total.png", dpi = 200)
+```
+
+## Modelle -- Tuning
+### Hyperparameter Tuning für SVM & Random Forest
+Support Vector Machine: 
+
+* C: Maß um Hyperebene zu fitten; je größer C, desto kleiner Margin um Ebene
+* Sigma: Maß für Stärke des Einflusses entfernter Punkte auf die Entscheidungsgrenze  
+
+Random Forest:  
+
+* mtry: Mindestanzahl der Variablen in jedem Baum  
+* sample.fraction: Anteil der Beobachtungen für Baumkonstruktion
+* min.node.size: Mindestzahl der Beobachtungen in jedem Endknoten  
+
+## Modelle -- Tuning
+### Nested Resampling
+Die selben Daten für Performance Schätzung und Tuning der Hyperparameter zu verwenden 
+könnte zu verzerrten Ergebnissen führen.  
+Lösung: Nested Spatial Cross Validation
+```{r resamp2, echo=FALSE, fig.cap="Nested Resampling",out.width = "750px"}
+knitr::include_graphics("images/nested_resampling.png")
+```
+
+## Modelle -- Tuning 
+Festgelegte Parameterräume: 
+```{r paramspaces, eval = F, echo = T}
+# Parameterspace SVM
+ps = makeParamSet(
+  makeNumericParam("C", lower = -12, upper = 15, 
+                   trafo = function(x) 2^x),
+  makeNumericParam("sigma", lower = -15, upper = 6, 
+                   trafo = function(x) 2^x)
+)
+# Result: C=0.0711; sigma=0.000688 : auc.test.mean=0.8035407
+# Parameterspace Random Forest
+ps = makeParamSet(
+  makeIntegerParam("mtry", lower = 1, upper = ncol(evd) - 1),
+  makeNumericParam("sample.fraction", lower = 0.2, upper = 0.9),
+  makeIntegerParam("min.node.size", lower = 1, upper = 10)
+)
+# Result: mtry=1; sample.fraction=0.309; min.node.size=10 
+# test.rmse=0.4660128
+```
+
+
+## Resultate -- Predictive Maps
+```{r logitpredmap, eval = T, echo = F, fig.height=5.5, fig.width=7.5}
+ggplot(data = df, aes(x,y, fill = pdata)) + 
+  geom_tile() + 
+  ggtitle("Predictive Map: Logistic Regression") +
+  scale_fill_gradientn(colours = rev(colorRamps::matlab.like(100))) +
+  coord_fixed() + 
+  ylab("Latitude") +
+  xlab("Longitude") + 
+  theme(legend.position = c(0.78,1),
+        legend.direction = "horizontal") + 
+  labs(fill = "Predicted Probabilities")
+```
+
+## Resultate -- Predictive Maps
+```{r svmpredmap, eval = T, echo = F, fig.height=5.5, fig.width=7.5}
+ggplot(data = svm_df, aes(x,y, fill = trueprob)) + 
+  geom_tile() + 
+  ggtitle("Predictive Map: SVM") +
+  scale_fill_gradientn(colours = rev(colorRamps::matlab.like(100))) +
+  coord_fixed() + 
+  ylab("Latitude") +
+  xlab("Longitude") + 
+  theme(legend.position = c(0.78,1),
+        legend.direction = "horizontal") + 
+  labs(fill = "Predicted Probabilities")
+```
+
+## Resultate -- Predictive Maps
+```{r rfpredmap, eval = T, echo = F, fig.height=5.5, fig.width=7.5}
+ggplot(data = predictions, aes(x,y, fill = rfpred)) + 
+  geom_tile() + 
+  ggtitle("Predictive Map: Random Forest") +
+  scale_fill_gradientn(colours = rev(colorRamps::matlab.like(100))) +
+  coord_fixed() + 
+  ylab("Latitude") +
+  xlab("Longitude") + 
+  theme(legend.position = c(0.78,1),
+        legend.direction = "horizontal") + 
+  labs(fill = "Predicted Probabilities")
+```
+
+## Resultate -- Cell-Difference-Maps
+```{r celldiff1, eval = T, echo = F, fig.height=5.5, fig.width=7.5}
+ggplot(data = predictions, aes(x,y, fill = lg_svm_diff)) + 
+  geom_tile() + 
+  ggtitle("Zellunterschiede: Logit vs SVM") +
+  scale_fill_gradientn(colours = rev(colorRamps::matlab.like(100))) +
+  coord_fixed() + 
+  ylab("Latitude") +
+  xlab("Longitude") + 
+  theme(legend.position = c(0.78,1),
+        legend.direction = "horizontal") + 
+  labs(fill = "Absolute Cell Differences")
+```
+
+## Resultate -- Cell-Difference-Maps
+```{r celldiff2, eval = T, echo = F, fig.height=5.5, fig.width=7.5}
+ggplot(data = predictions, aes(x,y, fill = lg_rf_diff)) + 
+  geom_tile() + 
+  ggtitle("Zellunterschiede: Logit vs Random Forest") +
+  scale_fill_gradientn(colours = rev(colorRamps::matlab.like(100))) +
+  coord_fixed() + 
+  ylab("Latitude") +
+  xlab("Longitude") + 
+  theme(legend.position = c(0.78,1),
+        legend.direction = "horizontal") + 
+  labs(fill = "Absolute Cell Differences")
+```
+
+## Resultate -- Model Performance: AUC
+```{r resampresults, eval = T, echo = F, fig.height=5.5, fig.width=5.5}
+resampling <- readRDS("Daten/resampling")
+df.m <- reshape2::melt(resampling, id.var = "Label")
+ggplot(data = df.m, aes(x=Var2, y=value)) + 
+  geom_boxplot(aes(fill=Var2)) + 
+  ylab("Area under ROC") +
+  xlab("Resampling Method") +
+  theme(legend.position = "none")
+```
+
+
+
+## Interpretation & Probleme
+* Random Forest scheint aus archäologischer Sicht am besten für die Problemstellung geeignet
+
+### Ergebnisse sind mit Vorsicht zu genießen:  
+* Datensituation nicht realistisch für Eisenzeit
+* Begrenzte Auflösung der Rasterdaten
+* Annahme der räumlichen Konstantheit der Schätzungen
+* Finden des optimalen Bufferradius ist nicht trivial
+
+## Ausblick 
+### Weitere Analysen sind möglich: 
+* Geographically Weighted Generalised Regression
+* Presence Only Modeling
+* Kriging
+
+## Packages & Literatur
+### Packages: 
+```{r packages, eval = F, echo = T}
+packs <- c("sf", "geosphere", "raster", "dplyr", "remotes", "RQGIS",
+           "mlr", "tmap", "ggplot2", "shiny", "scales", "zoo", 
+           "rbenchmark", "tmaptools", "rgrass7", "link2GI", 
+           "parallelMap", "tree", "ranger", "pROC", "maptools", 
+           "randomForest", "doParallel", "kernlab")
+```
+### Literatur:
+<font size="3">Fender, Peer (2017): Bayern in der Vorgeschichte  
+Probst, et al. (2018): Hyperparameters and Tuning Strategies for Random Forest  
+James, et al. (2013): An Introduction to Statistical Learning: With Applications in R  
+Cawley, et al. (2010): On over-Fitting in Model Selection and Subsequent Selection Bias in Performance Evaluation
+https://biogeo.ucdavis.edu/data/diva/wat/DEU_wat.zip
+https://www.bestellen.bayern.de/ (Gewässerkarte Bayern)</font>
+
+
+## Diskussion
